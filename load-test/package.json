@@ -1,0 +1,12 @@
+{
+  "name": "bookmyshow-load-test",
+  "version": "1.0.0",
+  "description": "Concurrency load test for BookMyShow seat locking backend",
+  "main": "load_test.js",
+  "scripts": {
+    "test:concurrency": "node load_test.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.5"
+  }
+}
