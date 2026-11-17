@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BookMyShow Ticketing Backend — Database Design Document</title>
+<style>
+  @page { margin: 1.5cm; size: A4; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; line-height: 1.6; color: #222; max-width: 900px; margin: 0 auto; padding: 20px; }
+  h1 { color: #e23744; border-bottom: 3px solid #e23744; padding-bottom: 8px; }
+  h2 { color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-top: 32px; }
+  h3 { color: #555; margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 20px 0; font-size: 13px; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+  th { background: #f5f5f5; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  code, pre { font-family: 'Consolas', 'Courier New', monospace; }
+  pre { background: #f8f8f8; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; border: 1px solid #e0e0e0; }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; }
+  .badge-green { background: #28a745; }
+  .badge-blue { background: #007bff; }
+  .badge-orange { background: #fd7e14; }
+  .toc { background: #f9f9f9; padding: 16px 24px; border-radius: 8px; border: 1px solid #e0e0e0; }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin: 4px 0; }
+  .note { background: #e3f2fd; border-left: 4px solid #1976d2; padding: 10px 14px; border-radius: 4px; margin: 12px 0; }
+  .warn { background: #fff3e0; border-left: 4px solid #e65100; padding: 10px 14px; border-radius: 4px; margin: 12px 0; }
+  .footer { text-align: center; color: #999; margin-top: 40px; border-top: 1px solid #ddd; padding-top: 12px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>🎬 BookMyShow — Ticketing Backend Database Design</h1>
+<p><strong>Version:</strong> 1.0 &nbsp;|&nbsp; <strong>Date:</strong> November 18, 2026 &nbsp;|&nbsp; <strong>Database:</strong> MySQL 8.0+</p>
+
+<div class="toc">
+<strong>Table of Contents</strong>
+<ol>
+  <li><a href="#entities">Entity List &amp; Attributes</a></li>
+  <li><a href="#erd">Entity-Relationship Diagram</a></li>
+  <li><a href="#normalization">Normalization Proof (1NF → BCNF)</a></li>
+  <li><a href="#concurrency">Concurrency &amp; Locking Strategy</a></li>
+  <li><a href="#p1">P1: Schema DDL &amp; Sample Data</a></li>
+  <li><a href="#p2">P2: Shows at a Theatre on a Date</a></li>
+  <li><a href="#indexes">Index Strategy</a></li>
+</ol>
+</div>
+
+<!-- ───────────────────── SECTION 1 ───────────────────── -->
+<h2 id="entities">1. Entity List &amp; Attributes</h2>
+
+<h3>1.1 cities</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>city_id</td><td>INT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>city_name</td><td>VARCHAR(100)</td><td>NOT NULL</td></tr>
+<tr><td>state</td><td>VARCHAR(100)</td><td>NOT NULL</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+
+<h3>1.2 theatres</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>theatre_id</td><td>INT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>city_id</td><td>INT (FK)</td><td>→ cities.city_id</td></tr>
+<tr><td>theatre_name</td><td>VARCHAR(200)</td><td>NOT NULL</td></tr>
+<tr><td>address</td><td>VARCHAR(500)</td><td>NOT NULL</td></tr>
+<tr><td>total_screens</td><td>SMALLINT</td><td>DEFAULT 1</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+
+<h3>1.3 screens</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>screen_id</td><td>INT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>theatre_id</td><td>INT (FK)</td><td>→ theatres.theatre_id</td></tr>
+<tr><td>screen_name</td><td>VARCHAR(50)</td><td>NOT NULL (e.g. "IMAX")</td></tr>
+<tr><td>screen_number</td><td>SMALLINT</td><td>UNIQUE within theatre</td></tr>
+<tr><td>total_seats</td><td>SMALLINT</td><td>NOT NULL</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+
+<h3>1.4 seats</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>seat_id</td><td>INT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>screen_id</td><td>INT (FK)</td><td>→ screens.screen_id</td></tr>
+<tr><td>seat_row</td><td>CHAR(2)</td><td>NOT NULL (e.g. "A")</td></tr>
+<tr><td>seat_number</td><td>SMALLINT</td><td>NOT NULL</td></tr>
+<tr><td>seat_type</td><td>ENUM</td><td>REGULAR, PREMIUM, RECLINER</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+</table>
+
+<h3>1.5 movies</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>movie_id</td><td>INT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>title</td><td>VARCHAR(300)</td><td>NOT NULL</td></tr>
+<tr><td>language</td><td>VARCHAR(50)</td><td>NOT NULL</td></tr>
+<tr><td>genre</td><td>VARCHAR(100)</td><td>NOT NULL</td></tr>
+<tr><td>duration_minutes</td><td>SMALLINT</td><td>NOT NULL</td></tr>
+<tr><td>certificate</td><td>ENUM</td><td>U, UA, A, S</td></tr>
+<tr><td>release_date</td><td>DATE</td><td>NOT NULL</td></tr>
+<tr><td>poster_url</td><td>VARCHAR(500)</td><td>NULL</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+
+<h3>1.6 shows</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>show_id</td><td>INT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>movie_id</td><td>INT (FK)</td><td>→ movies.movie_id</td></tr>
+<tr><td>screen_id</td><td>INT (FK)</td><td>→ screens.screen_id</td></tr>
+<tr><td>show_date</td><td>DATE</td><td>NOT NULL</td></tr>
+<tr><td>start_time</td><td>TIME</td><td>NOT NULL</td></tr>
+<tr><td>end_time</td><td>TIME</td><td>NOT NULL</td></tr>
+<tr><td>price_regular</td><td>DECIMAL(8,2)</td><td>NOT NULL</td></tr>
+<tr><td>price_premium</td><td>DECIMAL(8,2)</td><td>NOT NULL</td></tr>
+<tr><td>price_recliner</td><td>DECIMAL(8,2)</td><td>NOT NULL</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+<p><strong>Unique Key:</strong> <code>(screen_id, show_date, start_time)</code> — prevents overlapping shows on the same screen.</p>
+
+<h3>1.7 users</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>user_id</td><td>INT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>full_name</td><td>VARCHAR(200)</td><td>NOT NULL</td></tr>
+<tr><td>email</td><td>VARCHAR(254)</td><td>UNIQUE, NOT NULL</td></tr>
+<tr><td>phone</td><td>VARCHAR(15)</td><td>UNIQUE, NOT NULL</td></tr>
+<tr><td>password_hash</td><td>VARCHAR(255)</td><td>NOT NULL</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+
+<h3>1.8 show_seats ⚡ <span class="badge badge-orange">Concurrency Hot Table</span></h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>show_seat_id</td><td>BIGINT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>show_id</td><td>INT (FK)</td><td>→ shows.show_id</td></tr>
+<tr><td>seat_id</td><td>INT (FK)</td><td>→ seats.seat_id</td></tr>
+<tr><td>seat_status</td><td>ENUM</td><td>AVAILABLE, LOCKED, BOOKED</td></tr>
+<tr><td>locked_until</td><td>TIMESTAMP</td><td>NULL — set when LOCKED</td></tr>
+<tr><td>locked_by</td><td>INT (FK)</td><td>→ users.user_id</td></tr>
+<tr><td>booking_id</td><td>BIGINT (FK)</td><td>→ bookings.booking_id</td></tr>
+<tr><td>version</td><td>INT</td><td>Optimistic locking counter, DEFAULT 0</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+<p><strong>Unique Key:</strong> <code>(show_id, seat_id)</code> — each seat appears at most once per show.</p>
+
+<h3>1.9 bookings</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>booking_id</td><td>BIGINT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>user_id</td><td>INT (FK)</td><td>→ users.user_id</td></tr>
+<tr><td>show_id</td><td>INT (FK)</td><td>→ shows.show_id</td></tr>
+<tr><td>num_seats</td><td>SMALLINT</td><td>NOT NULL</td></tr>
+<tr><td>total_amount</td><td>DECIMAL(10,2)</td><td>NOT NULL</td></tr>
+<tr><td>booking_status</td><td>ENUM</td><td>PENDING, CONFIRMED, CANCELLED, EXPIRED</td></tr>
+<tr><td>booked_at</td><td>TIMESTAMP</td><td>NULL — set on CONFIRMED</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+
+<h3>1.10 payments</h3>
+<table>
+<tr><th>Column</th><th>Type</th><th>Constraints</th></tr>
+<tr><td>payment_id</td><td>BIGINT (PK)</td><td>AUTO_INCREMENT</td></tr>
+<tr><td>booking_id</td><td>BIGINT (FK)</td><td>→ bookings.booking_id</td></tr>
+<tr><td>idempotency_key</td><td>VARCHAR(128)</td><td><strong>UNIQUE</strong> — gateway's txn ID</td></tr>
+<tr><td>amount</td><td>DECIMAL(10,2)</td><td>NOT NULL</td></tr>
+<tr><td>currency</td><td>CHAR(3)</td><td>DEFAULT 'INR'</td></tr>
+<tr><td>payment_status</td><td>ENUM</td><td>INITIATED, SUCCESS, FAILED, REFUNDED</td></tr>
+<tr><td>payment_method</td><td>VARCHAR(50)</td><td>UPI, CARD, NET_BANKING, WALLET</td></tr>
+<tr><td>gateway_response</td><td>JSON</td><td>Raw gateway payload</td></tr>
+<tr><td>paid_at</td><td>TIMESTAMP</td><td>NULL — set on SUCCESS</td></tr>
+<tr><td>created_at</td><td>TIMESTAMP</td><td>DEFAULT NOW()</td></tr>
+<tr><td>updated_at</td><td>TIMESTAMP</td><td>ON UPDATE NOW()</td></tr>
+</table>
+
+<!-- ───────────────────── SECTION 2 ───────────────────── -->
+<h2 id="erd">2. Entity-Relationship Diagram</h2>
+<pre>
+┌──────────┐       ┌───────────┐       ┌──────────┐       ┌────────┐
+│  cities  │1────M│  theatres  │1────M│  screens  │1────M│  seats  │
+└──────────┘       └───────────┘       └──────┬───┘       └───┬────┘
+                                              │1              │1
+                   ┌──────────┐    M    ┌─────┴─────┐         │
+                   │  movies  │────────│   shows    │         │
+                   └──────────┘         └─────┬──────┘         │
+                                              │1               │
+                                        ┌─────┴────────────────┴───┐
+                                        │       show_seats         │
+                                        │   (Concurrency Hot)      │
+                                        └─────────┬────────────────┘
+                              ┌───────────┐       │        ┌────────────┐
+                              │   users   │───────┘        │  payments  │
+                              └─────┬─────┘                └──────┬─────┘
+                              ┌─────┴──────┐                      │
+                              │  bookings  │──────────────────────┘
+                              └────────────┘
+</pre>
+
+<!-- ───────────────────── SECTION 3 ───────────────────── -->
+<h2 id="normalization">3. Normalization Proof (1NF → BCNF)</h2>
+
+<h3>1NF ✅</h3>
+<ul>
+  <li>All columns contain <strong>atomic values</strong> (no arrays, no repeating groups).</li>
+  <li>Every table has a <strong>primary key</strong>.</li>
+</ul>
+
+<h3>2NF ✅</h3>
+<ul>
+  <li>Every non-key attribute is <strong>fully functionally dependent</strong> on the entire primary key.</li>
+  <li><code>show_seats</code> has candidate key <code>(show_id, seat_id)</code>: <code>seat_status</code>, <code>locked_until</code>, <code>locked_by</code> all depend on the full composite key.</li>
+</ul>
+
+<h3>3NF ✅</h3>
+<ul>
+  <li>No <strong>transitive dependencies</strong>. Example: <code>city_name</code> is not stored in <code>theatres</code>; it is accessed via FK to <code>cities</code>.</li>
+  <li>In <code>shows</code>, prices depend directly on <code>show_id</code>, not derived through <code>movie_id</code>.</li>
+</ul>
+
+<h3>BCNF ✅</h3>
+<ul>
+  <li>For every FD X → Y, X is a <strong>superkey</strong>.</li>
+  <li><code>shows</code>: <code>{screen_id, show_date, start_time}</code> → all attributes. This is a candidate key (UNIQUE constraint).</li>
+  <li><code>show_seats</code>: <code>{show_id, seat_id}</code> → all attributes. This is a candidate key (UNIQUE constraint).</li>
+</ul>
+
+<!-- ───────────────────── SECTION 4 ───────────────────── -->
+<h2 id="concurrency">4. Concurrency &amp; Locking Strategy</h2>
+
+<h3>4.1 Pessimistic Locking (Primary)</h3>
+<pre>
+-- Step 1: Acquire exclusive row locks
+SELECT * FROM show_seats
+WHERE show_id = ? AND seat_id IN (?, ?, ?)
+  AND seat_status = 'AVAILABLE'
+FOR UPDATE;
+-- InnoDB X-locks prevent concurrent access.
+
+-- Step 2: Mark as LOCKED with 5-minute hold
+UPDATE show_seats
+SET seat_status = 'LOCKED',
+    locked_until = NOW() + INTERVAL 5 MINUTE,
+    locked_by = ?
+WHERE ...;
+
+COMMIT;  -- releases locks
+</pre>
+<div class="note">
+<strong>Why pessimistic?</strong> For blockbuster opening-day shows, thousands of users target the same seats. <code>SELECT ... FOR UPDATE</code> guarantees <strong>zero double-bookings</strong> at the database level.
+</div>
+
+<h3>4.2 Timed Holds (5-Minute Window)</h3>
+<pre>
+User selects seats → LOCKED (5 min) → pays → BOOKED ✓
+                                    └→ timer expires → AVAILABLE (released)
+</pre>
+<ul>
+  <li><code>locked_until</code> stores expiry timestamp.</li>
+  <li>MySQL Event runs every 30s: <code>CALL sp_release_expired_holds()</code>.</li>
+  <li>In production, <strong>Redis EXPIRE</strong> keys provide sub-second precision.</li>
+</ul>
+
+<h3>4.3 Idempotent Payment Webhooks</h3>
+<ul>
+  <li><strong>UNIQUE constraint</strong> on <code>payments.idempotency_key</code> (gateway's event ID).</li>
+  <li>Before processing: check if key exists → if yes, return <code>ALREADY_PROCESSED</code>.</li>
+  <li>Guarantees <strong>exactly-once</strong> seat confirmation per payment event.</li>
+</ul>
+
+<h3>4.4 Concurrency Guarantees Summary</h3>
+<table>
+<tr><th>Scenario</th><th>Protection</th><th>Mechanism</th></tr>
+<tr><td>Two users select the same seat</td><td>No double-lock</td><td><code>SELECT … FOR UPDATE</code></td></tr>
+<tr><td>User doesn't pay in time</td><td>Seats released</td><td><code>locked_until</code> + scheduled event</td></tr>
+<tr><td>Payment webhook sent twice</td><td>Processed once</td><td><code>UNIQUE idempotency_key</code></td></tr>
+<tr><td>Read seat map during booking</td><td>Consistent view</td><td><code>version</code> column + optimistic retry</td></tr>
+<tr><td>DB crash during booking</td><td>Atomic rollback</td><td>InnoDB transactions</td></tr>
+</table>
+
+<!-- ───────────────────── SECTION 5 ───────────────────── -->
+<h2 id="p1">5. P1: Schema DDL &amp; Sample Data</h2>
+
+<h3>SQL Files</h3>
+<table>
+<tr><th>File</th><th>Purpose</th></tr>
+<tr><td><code>sql/01_schema.sql</code></td><td>CREATE TABLE statements for all 10 entities</td></tr>
+<tr><td><code>sql/02_seed_data.sql</code></td><td>INSERT sample rows</td></tr>
+<tr><td><code>sql/04_concurrency_procedures.sql</code></td><td>Stored procedures for locking, hold release, payment webhooks</td></tr>
+<tr><td><code>sql/05_indexes.sql</code></td><td>Performance indexes</td></tr>
+</table>
+
+<h3>Sample Data</h3>
+<table>
+<tr><th>Table</th><th>Rows</th><th>Highlights</th></tr>
+<tr><td>cities</td><td>5</td><td>Mumbai, Delhi, Bengaluru, Hyderabad, Chennai</td></tr>
+<tr><td>theatres</td><td>5</td><td>PVR, INOX, AMB across cities</td></tr>
+<tr><td>screens</td><td>12</td><td>Includes IMAX, MX4D, Gold Class</td></tr>
+<tr><td>seats</td><td>60</td><td>Regular, Premium, Recliner types</td></tr>
+<tr><td>movies</td><td>6</td><td>Pushpa 2, Singham Again, Interstellar, etc.</td></tr>
+<tr><td>shows</td><td>24</td><td>Shows across theatres for next 7 days</td></tr>
+<tr><td>users</td><td>5</td><td>Sample user accounts</td></tr>
+<tr><td>show_seats</td><td>35</td><td>Mix of AVAILABLE, LOCKED, BOOKED</td></tr>
+<tr><td>bookings</td><td>3</td><td>CONFIRMED and PENDING</td></tr>
+<tr><td>payments</td><td>2</td><td>SUCCESS payments with idempotency keys</td></tr>
+</table>
+
+<!-- ───────────────────── SECTION 6 ───────────────────── -->
+<h2 id="p2">6. P2: Shows at a Theatre on a Date</h2>
+
+<pre>
+SET @theatre_id = 1;        -- PVR INOX: Phoenix Palladium
+SET @show_date  = '2026-11-18';
+
+SELECT
+    m.title           AS movie_title,
+    m.language,
+    m.genre,
+    m.certificate,
+    CONCAT(FLOOR(m.duration_minutes / 60), 'h ',
+           MOD(m.duration_minutes, 60), 'm')  AS duration,
+    sc.screen_name,
+    sh.show_id,
+    sh.start_time,
+    sh.end_time,
+    sh.price_regular,
+    sh.price_premium,
+    sh.price_recliner,
+    (SELECT COUNT(*) FROM show_seats ss
+     WHERE ss.show_id = sh.show_id
+       AND ss.seat_status = 'AVAILABLE') AS available_seats,
+    (SELECT COUNT(*) FROM show_seats ss
+     WHERE ss.show_id = sh.show_id) AS total_seats
+FROM shows sh
+    INNER JOIN screens sc ON sh.screen_id = sc.screen_id
+    INNER JOIN movies  m  ON sh.movie_id  = m.movie_id
+WHERE sc.theatre_id = @theatre_id
+  AND sh.show_date  = @show_date
+ORDER BY m.title ASC, sh.start_time ASC;
+</pre>
+
+<h3>Query Explanation</h3>
+<ul>
+  <li><strong>Joins:</strong> <code>shows → screens</code> (filter by theatre), <code>shows → movies</code> (movie details).</li>
+  <li><strong>Sub-queries:</strong> Count available and total seats per show for the seat map.</li>
+  <li><strong>Index used:</strong> <code>idx_show_date_screen (show_date, screen_id)</code> — fast lookup.</li>
+  <li><strong>Order:</strong> Movie title then start time (matches BookMyShow UI).</li>
+</ul>
+
+<!-- ───────────────────── SECTION 7 ───────────────────── -->
+<h2 id="indexes">7. Index Strategy</h2>
+
+<table>
+<tr><th>Index</th><th>Table</th><th>Columns</th><th>Purpose</th></tr>
+<tr><td>uk_screen_date_time</td><td>shows</td><td>(screen_id, show_date, start_time)</td><td>Prevent overlapping shows</td></tr>
+<tr><td>idx_show_date_screen</td><td>shows</td><td>(show_date, screen_id)</td><td>P2 query: shows by date + theatre</td></tr>
+<tr><td>idx_shows_date_screen_movie</td><td>shows</td><td>(show_date, screen_id, movie_id, start_time)</td><td>Covering index for P2</td></tr>
+<tr><td>uk_show_seat</td><td>show_seats</td><td>(show_id, seat_id)</td><td>One row per seat per show</td></tr>
+<tr><td>idx_ss_show_status</td><td>show_seats</td><td>(show_id, seat_status)</td><td>Seat map loading</td></tr>
+<tr><td>idx_ss_locked_until</td><td>show_seats</td><td>(seat_status, locked_until)</td><td>Expired hold cleanup</td></tr>
+<tr><td>uk_idempotency</td><td>payments</td><td>(idempotency_key)</td><td>Exactly-once webhook</td></tr>
+<tr><td>idx_bookings_user_status</td><td>bookings</td><td>(user_id, booking_status)</td><td>User booking history</td></tr>
+</table>
+
+<div class="footer">
+  BookMyShow Ticketing Backend — Database Design Document &nbsp;|&nbsp; MySQL 8.0+ &nbsp;|&nbsp; November 2026
+</div>
+
+</body>
+</html>
