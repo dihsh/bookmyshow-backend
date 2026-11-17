@@ -397,28 +397,177 @@ This query:
 
 ---
 
-## 8. How to Run
+## 8. How to Run & Test on Your Laptop
 
 ### Prerequisites
-- MySQL 8.0+
 
-### Execute in Order
+- **MySQL 8.0+** installed and running
+  - Download: https://dev.mysql.com/downloads/installer/
+  - During installation, set a root password (you'll need it below)
+
+### Step-by-Step Setup
+
+#### Step 1: Verify MySQL is running
+
+```bash
+# Windows (PowerShell)
+mysql --version
+
+# If MySQL isn't in PATH, use the full path:
+# "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql" --version
+```
+
+#### Step 2: Clone the repo
+
+```bash
+git clone https://github.com/dihsh/bookmyshow-backend.git
+cd bookmyshow-backend
+```
+
+#### Step 3: Create the database and tables (P1)
 
 ```bash
 mysql -u root -p < sql/01_schema.sql
-mysql -u root -p < sql/02_seed_data.sql
-mysql -u root -p < sql/04_concurrency_procedures.sql
-mysql -u root -p < sql/05_indexes.sql
+```
 
-# Run the P2 query
+You'll be prompted for your MySQL root password. This creates the `bookmyshow` database and all 10 tables.
+
+#### Step 4: Load sample data
+
+```bash
+mysql -u root -p < sql/02_seed_data.sql
+```
+
+Inserts cities, theatres, screens, seats, movies, shows, users, bookings, and payments.
+
+#### Step 5: Create stored procedures (concurrency logic)
+
+```bash
+mysql -u root -p < sql/04_concurrency_procedures.sql
+```
+
+Creates the seat-locking, hold-release, and idempotent payment webhook procedures.
+
+#### Step 6: Add performance indexes
+
+```bash
+mysql -u root -p < sql/05_indexes.sql
+```
+
+#### Step 7: Run the P2 query (shows at a theatre on a date)
+
+```bash
 mysql -u root -p < sql/03_query_shows_by_theatre_date.sql
 ```
 
-### Enable Event Scheduler (for auto hold release)
+This lists all shows at **PVR INOX: Phoenix Palladium** (theatre_id=1) on **2026-11-18**, grouped by movie with show timings, screen names, prices, and seat availability.
+
+### Testing the Concurrency Features
+
+#### Test 1: Seat Locking
+
+Open a MySQL shell and run:
 
 ```sql
-SET GLOBAL event_scheduler = ON;
+USE bookmyshow;
+
+-- Lock seats A3 and A4 (seat_id 3,4) for show 1, by user 1
+CALL sp_lock_seats(1, 1, '3,4', @result);
+SELECT @result;
+-- Expected: 'SUCCESS'
+
+-- Try locking the same seats again (simulating a second user)
+CALL sp_lock_seats(1, 2, '3,4', @result);
+SELECT @result;
+-- Expected: 'CONFLICT' — seats are already locked!
 ```
+
+#### Test 2: Concurrent Access (open two MySQL terminals)
+
+**Terminal 1:**
+```sql
+USE bookmyshow;
+START TRANSACTION;
+SELECT * FROM show_seats WHERE show_id = 1 AND seat_id IN (11, 12) FOR UPDATE;
+-- Holds the lock... don't commit yet
+```
+
+**Terminal 2:**
+```sql
+USE bookmyshow;
+START TRANSACTION;
+SELECT * FROM show_seats WHERE show_id = 1 AND seat_id IN (11, 12) FOR UPDATE;
+-- This will BLOCK and wait until Terminal 1 commits or rolls back!
+```
+
+**Terminal 1:**
+```sql
+COMMIT;  -- Now Terminal 2 unblocks
+```
+
+#### Test 3: Idempotent Payment Processing
+
+```sql
+USE bookmyshow;
+
+-- First webhook call
+CALL sp_process_payment_webhook(3, 'razorpay_evt_003_xyz789', 500.00, 'UPI', 'SUCCESS', '{"status":"ok"}', @result);
+SELECT @result;
+-- Expected: 'PAYMENT_SUCCESS'
+
+-- Same webhook arrives again (gateway retry)
+CALL sp_process_payment_webhook(3, 'razorpay_evt_003_xyz789', 500.00, 'UPI', 'SUCCESS', '{"status":"ok"}', @result);
+SELECT @result;
+-- Expected: 'ALREADY_PROCESSED' — idempotent!
+```
+
+#### Test 4: Expired Hold Release
+
+```sql
+USE bookmyshow;
+
+-- Enable the event scheduler
+SET GLOBAL event_scheduler = ON;
+
+-- Check current locked seats
+SELECT seat_id, seat_status, locked_until FROM show_seats WHERE seat_status = 'LOCKED';
+
+-- Manually run the cleanup (or wait 30s for the event)
+CALL sp_release_expired_holds();
+
+-- Check again — expired locks should be released
+SELECT seat_id, seat_status, locked_until FROM show_seats WHERE seat_status = 'LOCKED';
+```
+
+#### Test 5: Verify the P2 Query with Different Parameters
+
+```sql
+USE bookmyshow;
+
+-- Shows at INOX R-City (theatre_id=2) on 2026-11-18
+SET @theatre_id = 2;
+SET @show_date = '2026-11-18';
+
+SELECT m.title, sc.screen_name, sh.start_time, sh.end_time, sh.price_regular
+FROM shows sh
+    INNER JOIN screens sc ON sh.screen_id = sc.screen_id
+    INNER JOIN movies  m  ON sh.movie_id  = m.movie_id
+WHERE sc.theatre_id = @theatre_id AND sh.show_date = @show_date
+ORDER BY m.title, sh.start_time;
+```
+
+### Quick Verification Checklist
+
+| # | Test | Expected Result | ✓ |
+|---|------|-----------------|---|
+| 1 | `SELECT COUNT(*) FROM cities;` | 5 | |
+| 2 | `SELECT COUNT(*) FROM theatres;` | 5 | |
+| 3 | `SELECT COUNT(*) FROM shows;` | 24 | |
+| 4 | `SELECT COUNT(*) FROM show_seats;` | 35 | |
+| 5 | P2 query returns shows grouped by movie | 16 rows for theatre 1, date 2026-11-18 | |
+| 6 | `sp_lock_seats` returns SUCCESS for available seats | 'SUCCESS' | |
+| 7 | `sp_lock_seats` returns CONFLICT for locked seats | 'CONFLICT' | |
+| 8 | Duplicate webhook returns ALREADY_PROCESSED | 'ALREADY_PROCESSED' | |
 
 ---
 
